@@ -1443,3 +1443,46 @@ async def test_published_updates_auto_bump_and_reject_stale_editors() -> None:
         )
     assert error.value.status_code == 400
     assert await _read_stored_manifest("versioned") == before
+
+
+@pytest.mark.asyncio
+async def test_marketplace_caller_requires_header_auth_when_setting_is_true(monkeypatch):
+    request = MagicMock()
+    request.headers = {}
+    request.base_url = "https://litellm.example.com/"
+    monkeypatch.setattr(claude_code_marketplace, "marketplace_auth_required", lambda: True)
+    monkeypatch.setattr(claude_code_marketplace, "marketplace_key_header_present", lambda _: False)
+
+    auth_error = ProxyException(
+        message="Missing API key",
+        type="missing_api_key",
+        param=None,
+        code="401",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    header_caller = AsyncMock(side_effect=auth_error)
+    monkeypatch.setattr(claude_code_marketplace, "header_key_caller", header_caller)
+
+    with pytest.raises(ProxyException) as exc:
+        await claude_code_marketplace._marketplace_caller(request, "sk-test")
+
+    assert exc.value.code == "401"
+    assert exc.value.headers["WWW-Authenticate"] == "Bearer"
+    header_caller.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_archive_download_requires_header_auth_before_visibility_check(
+    upload_storage: _UploadClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, plugins, _ = upload_storage
+    plugins.find_unique.return_value.enabled = True
+    monkeypatch.setattr(litellm.proxy.proxy_server, "general_settings", {
+        "claude_code_marketplace_auth_required": True,
+    })
+
+    response: Final = await client.get(_UPLOAD_PATH)
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.content == b""
