@@ -18,6 +18,7 @@ from litellm.proxy.discovery_endpoints.agent_skills_archive import (
     read_skill_archive_entry,
     safe_skill_archive_entry,
     skill_archive_entries,
+    within_archive_metadata_budget,
 )
 
 MAX_IMPORT_BYTES: Final = 10 * 1024 * 1024
@@ -93,6 +94,8 @@ async def fetch_skill_source(source: GitHubSkillSource, client: httpx.AsyncClien
 
 
 def select_imported_skill(content: bytes, source: GitHubSkillSource) -> SkillArchive | SkillImportError:
+    if not within_archive_metadata_budget(content):
+        return SkillImportError(413, "Repository exceeds the skill archive limits")
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             infos: Final = archive.infolist()

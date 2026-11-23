@@ -654,6 +654,31 @@ class TestPathSecurity:
         assert isinstance(response, TextResult) and "Invalid path parameter" in response.text
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("filename", ["C:/Users/public/report.txt", "C:payload"])
+    async def test_should_reject_windows_drive_prefixed_path_inputs(self, filename: str):
+        operation = {
+            "parameters": [
+                {
+                    "name": "filename",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"},
+                }
+            ]
+        }
+
+        tool_function = create_tool_function(
+            path="/files/{filename}",
+            method="GET",
+            operation=operation,
+            base_url="https://example.com",
+        )
+
+        response = await tool_function(**{"filename": filename})
+
+        assert isinstance(response, TextResult) and "Invalid path parameter" in response.text
+
+    @pytest.mark.asyncio
     async def test_should_encode_and_request_safe_path_parameters(self):
         """Test that path parameters are properly URL encoded."""
         operation = {

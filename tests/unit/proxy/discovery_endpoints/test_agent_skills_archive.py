@@ -1,13 +1,17 @@
 import hashlib
 import io
 import stat
+import struct
 import zipfile
 from typing import Final
 
 import pytest
 
+import litellm.proxy.discovery_endpoints.agent_skills_archive as agent_skills_archive
 from litellm.proxy.discovery_endpoints.agent_skills_archive import (
+    MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES,
     MAX_ARCHIVE_ENTRIES,
+    MAX_ARCHIVE_TOTAL_ENTRIES,
     agent_skill_frontmatter,
     build_agent_skill_archive,
     build_skill_archive,
@@ -110,6 +114,30 @@ def test_an_upload_over_the_entry_cap_is_not_installable():
     }
 
     assert build_skill_archive(zip_bytes(files)) is None
+
+
+def test_metadata_entry_budget_rejects_before_zipfile_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    content: Final = struct.pack(
+        "<4sHHHHIIH", b"PK\x05\x06", 0, 0, MAX_ARCHIVE_TOTAL_ENTRIES + 1, MAX_ARCHIVE_TOTAL_ENTRIES + 1, 0, 0, 0
+    )
+
+    def fail_zipfile_open(*args: object, **kwargs: object) -> None:
+        pytest.fail("Entry metadata budget should reject archive before opening ZipFile")
+
+    monkeypatch.setattr(agent_skills_archive.zipfile, "ZipFile", fail_zipfile_open)
+    assert build_agent_skill_archive(content) is None
+
+
+def test_metadata_directory_budget_rejects_before_zipfile_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    content: Final = struct.pack(
+        "<4sHHHHIIH", b"PK\x05\x06", 0, 0, 1, 1, MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES + 1, 0, 0
+    )
+
+    def fail_zipfile_open(*args: object, **kwargs: object) -> None:
+        pytest.fail("Central-directory budget should reject archive before opening ZipFile")
+
+    monkeypatch.setattr(agent_skills_archive.zipfile, "ZipFile", fail_zipfile_open)
+    assert build_skill_archive(content) is None
 
 
 def test_discovery_keeps_its_permission_and_finder_metadata_policy() -> None:

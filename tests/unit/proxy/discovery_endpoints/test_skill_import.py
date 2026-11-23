@@ -11,7 +11,9 @@ from typing import Final, NoReturn
 import httpx
 import pytest
 
+import litellm.proxy.discovery_endpoints.skill_import as skill_import_module
 from litellm.proxy.discovery_endpoints.agent_skills_archive import (
+    MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES,
     MAX_ARCHIVE_ENTRIES,
     MAX_ARCHIVE_UNPACKED_BYTES,
     MAX_SKILL_MANIFEST_BYTES,
@@ -221,3 +223,17 @@ def test_candidate_metadata_is_validated_before_manifest_decompression(
     monkeypatch.setattr(zlib, "decompressobj", reject_decompression)
     result: Final = select_imported_skill(content, SOURCE)
     assert isinstance(result, SkillImportError) and result.status == status
+
+
+def test_repository_metadata_budget_is_enforced_before_zipfile_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    content: Final = struct.pack(
+        "<4sHHHHIIH", b"PK\x05\x06", 0, 0, 1, 1, MAX_ARCHIVE_CENTRAL_DIRECTORY_BYTES + 1, 0, 0
+    )
+
+    def fail_zipfile_open(*args: object, **kwargs: object) -> None:
+        pytest.fail("Metadata budget should reject repository before opening ZipFile")
+
+    monkeypatch.setattr(skill_import_module.zipfile, "ZipFile", fail_zipfile_open)
+    result: Final = select_imported_skill(content, SOURCE)
+    assert isinstance(result, SkillImportError) and result.status == 413
+

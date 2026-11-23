@@ -203,6 +203,9 @@ def _sanitize_path_parameter_value(param_value: object, param_name: str) -> str:
     if "/" in normalized_value:
         raise ValueError(f"Path parameter '{param_name}' must not contain path separators")
 
+    if re.match(r"^[A-Za-z]:", normalized_value):
+        raise ValueError(f"Path parameter '{param_name}' must not include a Windows drive prefix")
+
     if any(part in {".", ".."} for part in PurePosixPath(normalized_value).parts):
         raise ValueError(f"Path parameter '{param_name}' cannot include '.' or '..' segments")
 
